@@ -120,7 +120,7 @@ dependencies {
 
 #### gradle.properties
 ```properties
-# UPS API Credentials (add to local gradle.properties)
+# UPS API Credentials (add to local gradle.properties & copy gradle.properties.copy > gradle.properties)
 ups_client_id=YOUR_UPS_CLIENT_ID
 ups_client_secret=YOUR_UPS_CLIENT_SECRET
 ```
