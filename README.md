@@ -1,6 +1,6 @@
 # ShipScan Android Application
 
-A modern Android application that streamlines shipping operations by scanning barcodes, retrieving shipment data from Business Central, creating UPS shipping labels, and updating tracking information back to the ERP system. 
+A Android application that streamlines shipping operations by scanning barcodes, retrieving shipment data from Business Central, creating UPS shipping labels, and updating tracking information back to the ERP system. 
 
 ## Overview
 
@@ -133,13 +133,6 @@ ups_client_secret=YOUR_UPS_CLIENT_SECRET
 private const val BASE_URL = "http://192.168.0.25:3000/api"
 ```
 
-#### UPS API Configuration
-```kotlin
-// UPS API endpoints are pre-configured for production use
-private const val UPS_AUTH_URL = "https://wwwcie.ups.com/security/v1/oauth/token"
-private const val UPS_SHIPPING_URL = "https://wwwcie.ups.com/api/shipments/v2409/ship"
-```
-
 ## Installation & Deployment
 
 ### Development Setup
@@ -147,7 +140,7 @@ private const val UPS_SHIPPING_URL = "https://wwwcie.ups.com/api/shipments/v2409
 1. **Clone Repository**:
    ```bash
    git clone <repository-url>
-   cd shipscan-android
+   cd ShipScan
    ```
 
 2. **Configure API Keys**:
