@@ -3,11 +3,9 @@ package com.luminys.shipscan
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
 import android.graphics.pdf.PdfDocument
 import android.os.Bundle
 import android.print.PrintAttributes
-import android.print.PrintJob
 import android.print.PrintManager
 import android.util.Base64
 import android.util.Log
@@ -31,17 +29,22 @@ class LabelActivity : AppCompatActivity() {
     }
 
     // UI Components
-    private lateinit var btnBack: Button
+    private lateinit var btnBack: ImageButton
     private lateinit var tvShipmentNumber: TextView
     private lateinit var tvCustomerName: TextView
     private lateinit var tvTrackingNumber: TextView
     private lateinit var tvShipDate: TextView
-    private lateinit var tvDeliveryDate: TextView
+    private lateinit var tvBillingWeight: TextView
+    private lateinit var tvTotalCharge: TextView
     private lateinit var ivLabelPreview: ImageView
     private lateinit var btnPrintLabel: Button
     private lateinit var btnUpdateBC: Button
     private lateinit var btnDone: Button
+    private lateinit var btnRetry: Button
     private lateinit var layoutSuccess: LinearLayout
+    private lateinit var layoutLoading: LinearLayout
+    private lateinit var layoutError: LinearLayout
+    private lateinit var layoutContent: ScrollView
     private lateinit var progressBar: ProgressBar
     private lateinit var tvStatus: TextView
 
@@ -67,7 +70,7 @@ class LabelActivity : AppCompatActivity() {
             populateData()
             generateLabelPreview()
         } else {
-            showError("Missing shipment or label data")
+            showErrorState("Missing shipment or label data")
         }
     }
 
@@ -77,36 +80,39 @@ class LabelActivity : AppCompatActivity() {
         tvCustomerName = findViewById(R.id.tvCustomerName)
         tvTrackingNumber = findViewById(R.id.tvTrackingNumber)
         tvShipDate = findViewById(R.id.tvShipDate)
-        tvDeliveryDate = findViewById(R.id.tvDeliveryDate)
+        tvBillingWeight = findViewById(R.id.tvBillingWeight)
+        tvTotalCharge = findViewById(R.id.tvTotalCharge)
         ivLabelPreview = findViewById(R.id.ivLabelPreview)
         btnPrintLabel = findViewById(R.id.btnPrintLabel)
         btnUpdateBC = findViewById(R.id.btnUpdateBC)
         btnDone = findViewById(R.id.btnDone)
+        btnRetry = findViewById(R.id.btnRetry)
         layoutSuccess = findViewById(R.id.layoutSuccess)
+        layoutLoading = findViewById(R.id.layoutLoading)
+        layoutError = findViewById(R.id.layoutError)
+        layoutContent = findViewById(R.id.layoutContent)
         progressBar = findViewById(R.id.progressBar)
         tvStatus = findViewById(R.id.tvStatus)
     }
 
     private fun setupClickListeners() {
-        btnBack.setOnClickListener {
-            finish()
-        }
+        btnBack.setOnClickListener { finish() }
 
-        btnPrintLabel.setOnClickListener {
-            printLabel()
-        }
+        btnPrintLabel.setOnClickListener { printLabel() }
 
-        btnUpdateBC.setOnClickListener {
-            updateBCSystem()
-        }
+        btnUpdateBC.setOnClickListener { updateBCSystem() }
 
         btnDone.setOnClickListener {
-            // Go back to main activity
             val intent = Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
             }
             startActivity(intent)
             finish()
+        }
+
+        btnRetry.setOnClickListener {
+            showLoading()
+            generateLabelPreview()
         }
     }
 
@@ -115,16 +121,13 @@ class LabelActivity : AppCompatActivity() {
         val label = labelResponse ?: return
 
         tvShipmentNumber.text = "Shipment: ${shipment.shipmentNo}"
-        tvCustomerName.text = shipment.sellToCustomerName
+        tvCustomerName.text = "Ship To: ${shipment.shipToName}"
         tvTrackingNumber.text = "Tracking: ${label.trackingNumber}"
         tvShipDate.text = "Ship Date: $shipDate"
 
-        // Only set delivery date if it's not empty
-        if (label.estimatedDeliveryDate.isNotEmpty()) {
-            tvDeliveryDate.text = "Est. Delivery: ${label.estimatedDeliveryDate}"
-        } else {
-            tvDeliveryDate.text = "Est. Delivery: TBD"
-        }
+
+        tvBillingWeight.text = "Billing Weight: ${label.billingWeight} LBS"
+        tvTotalCharge.text = "Total Charge: $${label.totalCharge} USD"
     }
 
     private fun generateLabelPreview() {
@@ -135,39 +138,33 @@ class LabelActivity : AppCompatActivity() {
                 showStatus("Loading label preview...")
 
                 withContext(Dispatchers.IO) {
-                    // Decode the base64 data
                     val imageBytes = Base64.decode(label.labelData, Base64.DEFAULT)
 
-                    // Check if it's a PDF or GIF
                     val isPdf = imageBytes.size > 4 &&
-                            imageBytes.sliceArray(0..3).contentEquals(byteArrayOf(0x25, 0x50, 0x44, 0x46)) // %PDF
+                            imageBytes.sliceArray(0..3).contentEquals(byteArrayOf(0x25, 0x50, 0x44, 0x46))
 
-                    if (isPdf) {
-                        // It's already a PDF
+                    labelFile = if (isPdf) {
                         val tempFile = File(cacheDir, "temp_label.pdf")
-                        FileOutputStream(tempFile).use { fos ->
-                            fos.write(imageBytes)
-                        }
-                        labelFile = tempFile
+                        FileOutputStream(tempFile).use { it.write(imageBytes) }
+                        tempFile
                     } else {
-                        // It's a GIF (or other image format), convert to PDF
                         val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
                         if (bitmap != null) {
-                            labelFile = convertBitmapToPdf(bitmap, "temp_label.pdf")
-                        } else {
-                            throw Exception("Could not decode image data")
-                        }
+                            convertBitmapToPdf(bitmap, "temp_label.pdf")
+                        } else throw Exception("Could not decode image data")
                     }
                 }
 
-                // Display the image in ImageView
-                val imageBytes = Base64.decode(label.labelData, Base64.DEFAULT)
-                val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+                val bitmap = BitmapFactory.decodeByteArray(
+                    Base64.decode(label.labelData, Base64.DEFAULT),
+                    0,
+                    Base64.decode(label.labelData, Base64.DEFAULT).size
+                )
 
                 if (bitmap != null) {
                     ivLabelPreview.setImageBitmap(bitmap)
                     ivLabelPreview.visibility = View.VISIBLE
-                    hideStatus()
+                    showContent()
                 } else {
                     showPlaceholderLabel()
                 }
@@ -181,42 +178,22 @@ class LabelActivity : AppCompatActivity() {
 
     private fun convertBitmapToPdf(bitmap: Bitmap, fileName: String): File {
         val pdfDocument = PdfDocument()
-
-        // Create page info with bitmap dimensions
         val pageInfo = PdfDocument.PageInfo.Builder(bitmap.width, bitmap.height, 1).create()
-
-        // Start a page
         val page = pdfDocument.startPage(pageInfo)
-        val canvas: Canvas = page.canvas
-
-        // Draw bitmap on the PDF page
-        canvas.drawBitmap(bitmap, 0f, 0f, null)
-
-        // Finish the page
+        page.canvas.drawBitmap(bitmap, 0f, 0f, null)
         pdfDocument.finishPage(page)
 
-        // Write the PDF to file
         val file = File(cacheDir, fileName)
-        FileOutputStream(file).use { outputStream ->
-            pdfDocument.writeTo(outputStream)
-        }
-
-        // Close the document
+        FileOutputStream(file).use { pdfDocument.writeTo(it) }
         pdfDocument.close()
-
-        Log.d(TAG, "Converted GIF to PDF: ${file.absolutePath}")
         return file
     }
 
     private fun showPlaceholderLabel() {
-        hideStatus()
         ivLabelPreview.visibility = View.VISIBLE
-        // You can set a placeholder image here
         ivLabelPreview.setBackgroundColor(resources.getColor(android.R.color.darker_gray, null))
-
-        // Create a simple text overlay for the placeholder
-        val label = labelResponse ?: return
-        showToast("Label generated successfully - ${label.trackingNumber}")
+        showToast("Label generated successfully - ${labelResponse?.trackingNumber}")
+        showContent()
     }
 
     private fun printLabel() {
@@ -227,21 +204,14 @@ class LabelActivity : AppCompatActivity() {
 
             if (labelFile != null && labelFile!!.exists()) {
                 val printAdapter = PDFPrintAdapter(this, labelFile!!, "Shipping_Label_${label.trackingNumber}")
-
                 val printAttributes = PrintAttributes.Builder()
                     .setMediaSize(PrintAttributes.MediaSize.NA_LETTER)
                     .setResolution(PrintAttributes.Resolution("pdf", PRINT_SERVICE, 300, 300))
                     .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
                     .build()
 
-                val printJob: PrintJob = printManager.print(
-                    "Shipping Label ${label.trackingNumber}",
-                    printAdapter,
-                    printAttributes
-                )
-
+                printManager.print("Shipping Label ${label.trackingNumber}", printAdapter, printAttributes)
                 showToast("Printing label...")
-
             } else {
                 showToast("Label file not available for printing")
             }
@@ -298,9 +268,23 @@ class LabelActivity : AppCompatActivity() {
         tvStatus.visibility = View.GONE
     }
 
-    private fun showError(message: String) {
+    private fun showErrorState(message: String) {
+        layoutError.visibility = View.VISIBLE
+        layoutContent.visibility = View.GONE
+        layoutLoading.visibility = View.GONE
         showToast(message)
-        finish()
+    }
+
+    private fun showLoading() {
+        layoutLoading.visibility = View.VISIBLE
+        layoutContent.visibility = View.GONE
+        layoutError.visibility = View.GONE
+    }
+
+    private fun showContent() {
+        layoutContent.visibility = View.VISIBLE
+        layoutLoading.visibility = View.GONE
+        layoutError.visibility = View.GONE
     }
 
     private fun showToast(message: String) {
@@ -309,11 +293,6 @@ class LabelActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        // Clean up temp files
-        labelFile?.let { file ->
-            if (file.exists()) {
-                file.delete()
-            }
-        }
+        labelFile?.let { if (it.exists()) it.delete() }
     }
 }

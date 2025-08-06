@@ -22,6 +22,7 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import android.widget.FrameLayout
 
 class MainActivity : AppCompatActivity() {
 
@@ -59,7 +60,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initializeViews() {
-        previewView = findViewById(R.id.previewView)
+        val cameraFrame = findViewById<FrameLayout>(R.id.cameraFrame)
+
+        // Create PreviewView programmatically to avoid layout preview errors
+        previewView = PreviewView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        // Clear any existing views and add the PreviewView
+        cameraFrame.removeAllViews()
+        cameraFrame.addView(previewView)
+
         etBarcodeInput = findViewById(R.id.etBarcodeInput)
         btnProcess = findViewById(R.id.btnProcess)
     }

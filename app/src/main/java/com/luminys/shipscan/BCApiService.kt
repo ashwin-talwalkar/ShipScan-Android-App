@@ -5,69 +5,11 @@ import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
-import java.io.Serializable
 
-data class ShipmentData(
-    val shipmentNo: String,
-    val sellToCustomer: String,
-    val sellToCustomerName: String,
-    val salesOrder: String,
-    val externalDocumentNo: String,
-    val packageTrackingNo: String,
-    val ediSentAt: String,
-    val locationCode: String,
-    val createdBy: String,
-    val shipmentDate: String,
-    val assignedUserId: String,
-    val status: String,
-    val upsAccountNumber: String,
-    val shipping: ShippingInfo,
-    val lines: List<LineItem>
-) : Serializable
-
-data class ShippingInfo(
-    val addressCode: String,
-    val name: String,
-    val address: String,
-    val address2: String,
-    val city: String,
-    val shipToState: String,
-    val zipCode: String,
-    val countryRegion: String,
-    val phoneNo: String,
-    val contact: String,
-    val locationCode: String,
-    val outboundWhseHandlingTime: String,
-    val shippingTime: String,
-    val shipmentMethod: ShipmentMethod
-) : Serializable
-
-data class ShipmentMethod(
-    val code: String,
-    val agent: String,
-    val agentService: String
-) : Serializable
-
-data class LineItem(
-    val itemNo: String,
-    val modelName: String,
-    val description: String,
-    val quantity: Int,
-    val unitOfMeasureCode: String
-) : Serializable
-
-data class PackageDimensions(
-    val height: String,
-    val width: String,
-    val depth: String,
-    val weight: String
-) : Serializable
-
-data class LabelResponse(
-    val trackingNumber: String,
-    val labelData: String,
-    val estimatedDeliveryDate: String
-) : Serializable
+private data class BCToken(
+    val accessToken: String,
+    val expiresAt: Long
+)
 
 private data class UPSToken(
     val accessToken: String,
@@ -76,20 +18,31 @@ private data class UPSToken(
 
 object BCApiService {
 
-    private const val BASE_URL = "http://192.168.0.25:3000/api"
+    private const val BC_BASE_URL = "https://api.businesscentral.dynamics.com/v2.0"
+    private const val ENVIRONMENT = "Lmy0610"
+    private const val COMPANY_ID = "0d85027a-3432-ef11-8409-002248ab1716"
+
     private const val UPS_AUTH_URL = "https://wwwcie.ups.com/security/v1/oauth/token"
     private const val UPS_SHIPPING_URL = "https://wwwcie.ups.com/api/shipments/v2409/ship"
 
     // Token caching
-    private var cachedToken: UPSToken? = null
+    private var cachedBCToken: BCToken? = null
+    private var cachedUPSToken: UPSToken? = null
+    private const val UPS_ACCOUNT_NUMBER = "X09834"
 
     suspend fun getShipment(shipmentNo: String): ShipmentData {
         return try {
-            val url = URL("$BASE_URL/shipments/$shipmentNo")
+            val accessToken = getBCAccessToken()
+
+            val apiUrl = "$BC_BASE_URL/${BuildConfig.TENANT_ID}/$ENVIRONMENT/api/art/integration/v1.0/companies($COMPANY_ID)/warehousesshipments('$shipmentNo')"
+            println("API URL: $apiUrl") // Debug log
+
+            val url = URL(apiUrl)
             val connection = url.openConnection() as HttpURLConnection
 
             connection.apply {
                 requestMethod = "GET"
+                setRequestProperty("Authorization", "Bearer $accessToken")
                 setRequestProperty("Content-Type", "application/json")
                 setRequestProperty("Accept", "application/json")
                 connectTimeout = 10000
@@ -97,18 +50,174 @@ object BCApiService {
             }
 
             val responseCode = connection.responseCode
+            println("Response Code: $responseCode") // Debug log
 
             if (responseCode == HttpURLConnection.HTTP_OK) {
                 val response = connection.inputStream.bufferedReader().use { it.readText() }
+                println("Success Response: $response") // Debug log
                 parseShipmentResponse(response)
             } else {
                 val errorResponse = connection.errorStream?.bufferedReader()?.use { it.readText() }
-                    ?: "HTTP $responseCode"
-                throw Exception("Server error: $errorResponse")
+                    ?: "No error details available"
+
+                println("Error Response Code: $responseCode") // Debug log
+                println("Error Response Body: $errorResponse") // Debug log
+
+                // More specific error messages based on response code
+                val errorMessage = when (responseCode) {
+                    HttpURLConnection.HTTP_UNAUTHORIZED -> "Authentication failed - check BC credentials"
+                    HttpURLConnection.HTTP_FORBIDDEN -> "Access forbidden - check permissions"
+                    HttpURLConnection.HTTP_NOT_FOUND -> "Shipment '$shipmentNo' not found or API endpoint incorrect"
+                    HttpURLConnection.HTTP_BAD_REQUEST -> "Bad request - check shipment number format: $errorResponse"
+                    HttpURLConnection.HTTP_INTERNAL_ERROR -> "Business Central server error: $errorResponse"
+                    else -> "HTTP $responseCode: $errorResponse"
+                }
+
+                throw Exception("Server error: $errorMessage")
             }
 
         } catch (e: Exception) {
-            throw Exception("Network error: ${e.message}")
+            println("Exception caught: ${e.message}") // Debug log
+            e.printStackTrace() // Full stack trace
+
+            if (e.message?.contains("Server error") == true) {
+                throw e // Re-throw server errors as-is
+            } else {
+                throw Exception("Network error: ${e.message}")
+            }
+        }
+    }
+
+    private suspend fun getBCAccessToken(): String {
+        // Check if we have a valid cached token
+        cachedBCToken?.let { token ->
+            if (System.currentTimeMillis() < token.expiresAt) {
+                return token.accessToken
+            }
+        }
+
+        // Get new token
+        return try {
+            val tokenUrl = "https://login.microsoftonline.com/${BuildConfig.TENANT_ID}/oauth2/v2.0/token"
+            println("Token URL: $tokenUrl") // Debug log
+
+            val url = URL(tokenUrl)
+            val connection = url.openConnection() as HttpURLConnection
+
+            connection.apply {
+                requestMethod = "POST"
+                setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+                doOutput = true
+                connectTimeout = 30000
+                readTimeout = 30000
+            }
+
+            val requestData = buildString {
+                append("grant_type=client_credentials")
+                append("&client_id=${BuildConfig.BC_CLIENT_ID}")
+                append("&client_secret=${BuildConfig.BC_CLIENT_SECRET}")
+                append("&scope=${BuildConfig.BC_SCOPE}")
+            }
+
+            println("Auth request data: grant_type=client_credentials&client_id=${BuildConfig.BC_CLIENT_ID}&client_secret=***&scope=${BuildConfig.BC_SCOPE}") // Debug (hide secret)
+
+            OutputStreamWriter(connection.outputStream).use { writer ->
+                writer.write(requestData)
+                writer.flush()
+            }
+
+            val responseCode = connection.responseCode
+            println("Auth Response Code: $responseCode") // Debug log
+
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                val response = connection.inputStream.bufferedReader().use { it.readText() }
+                println("Auth Success Response: $response") // Debug log
+
+                val json = JSONObject(response)
+                val accessToken = json.getString("access_token")
+                val expiresIn = json.optLong("expires_in", 3600) // Default 1 hour
+
+                // Cache the token with expiration (subtract 5 minutes for safety margin)
+                val expiresAt = System.currentTimeMillis() + ((expiresIn - 300) * 1000)
+                cachedBCToken = BCToken(accessToken, expiresAt)
+
+                accessToken
+            } else {
+                val errorResponse = connection.errorStream?.bufferedReader()?.use { it.readText() }
+                    ?: "No error details available"
+
+                println("Auth Error Response: $errorResponse") // Debug log
+
+                val errorMessage = when (responseCode) {
+                    HttpURLConnection.HTTP_BAD_REQUEST -> {
+                        "Invalid authentication request. Check your BC_CLIENT_ID, BC_CLIENT_SECRET, and TENANT_ID in gradle.properties: $errorResponse"
+                    }
+                    HttpURLConnection.HTTP_UNAUTHORIZED -> {
+                        "Authentication failed. Verify BC_CLIENT_ID and BC_CLIENT_SECRET are correct: $errorResponse"
+                    }
+                    else -> "HTTP $responseCode: $errorResponse"
+                }
+
+                throw Exception("BC authentication failed: $errorMessage")
+            }
+
+        } catch (e: Exception) {
+            println("Auth Exception: ${e.message}") // Debug log
+            e.printStackTrace()
+            throw Exception("BC authentication error: ${e.message}")
+        }
+    }
+
+    private fun getAppropriateUPSService(shipment: ShipmentData): Pair<String, String> {
+        val destinationState = shipment.shipToCounty.uppercase()
+        val destinationCountry = shipment.shipToCountry.uppercase()
+
+        println("Destination Address:")
+        println("City: ${shipment.shipToCity}")
+        println("State/County: ${shipment.shipToCounty}")
+        println("ZIP: ${shipment.shipToPostCode}")
+        println("Country: ${shipment.shipToCountry}")
+
+        return when {
+            // Puerto Rico - requires Air services, Ground doesn't work
+            destinationState == "PR" -> {
+                Pair("01", "UPS Next Day Air")
+            }
+
+            // Alaska and Hawaii - require specific services
+            destinationState == "AK" -> {
+                Pair("02", "UPS 2nd Day Air") // Ground doesn't work to Alaska
+            }
+
+            destinationState == "HI" -> {
+                Pair("02", "UPS 2nd Day Air") // Ground doesn't work to Hawaii
+            }
+
+            // Other US territories
+            destinationState in listOf("VI", "GU", "AS", "MP") -> {
+                Pair("02", "UPS 2nd Day Air") // Air service for territories
+            }
+
+            // International shipments (non-US country)
+            destinationCountry != "US" && destinationCountry != "USA" && destinationCountry.isNotEmpty() -> {
+                Pair("11", "UPS Standard") // International service
+            }
+
+            // Continental US (48 states + DC)
+            destinationCountry in listOf("US", "USA", "") -> {
+                // Use Ground for continental US
+                val serviceCode = when {
+                    shipment.shipping?.shipmentMethod?.code?.isNotEmpty() == true ->
+                        shipment.shipping.shipmentMethod.code
+                    else -> "GROUND"
+                }
+                Pair(getUPSServiceCode(serviceCode), getServiceDescription(serviceCode))
+            }
+
+            // Fallback - use 2nd Day Air as most reliable
+            else -> {
+                Pair("02", "UPS 2nd Day Air")
+            }
         }
     }
 
@@ -134,6 +243,7 @@ object BCApiService {
                 readTimeout = 30000
             }
 
+
             // Create UPS Shipment Request
             val requestBody = JSONObject().apply {
                 put("ShipmentRequest", JSONObject().apply {
@@ -150,59 +260,61 @@ object BCApiService {
 
                         // Shipper info
                         put("Shipper", JSONObject().apply {
-                            put("Name", "Your Company Name")
+                            put("Name", "Luminys Systems Corporation")
                             put("AttentionName", "Shipping Department")
                             put("TaxIdentificationNumber", "123456")
                             put("Phone", JSONObject().apply {
-                                put("Number", "1234567890")
+                                put("Number", "9496553999")
                                 put("Extension", " ")
                             })
-                            put("ShipperNumber", shipment.upsAccountNumber)
-                            put("FaxNumber", "1234567890")
+                            put("ShipperNumber", UPS_ACCOUNT_NUMBER)
+                            put("FaxNumber", "9496553999")
                             put("Address", JSONObject().apply {
-                                put("AddressLine", listOf("123 Business Street"))
-                                put("City", "Your City")
+                                put("AddressLine", listOf("15245 Alton Pkwy"))
+                                put("City", "Irvine")
                                 put("StateProvinceCode", "CA")
-                                put("PostalCode", "90210")
+                                put("PostalCode", "92618")
                                 put("CountryCode", "US")
                             })
                         })
 
                         // Ship To info from shipment data
                         put("ShipTo", JSONObject().apply {
-                            put("Name", shipment.shipping.name)
-                            put("AttentionName", shipment.shipping.contact.ifEmpty { shipment.shipping.name })
+                            put("Name", shipment.shipToName.ifEmpty { "Unknown" })
+                            put("AttentionName", shipment.shipToContact.ifEmpty { shipment.shipToName })
                             put("Phone", JSONObject().apply {
-                                put("Number", shipment.shipping.phoneNo.ifEmpty { "0000000000" })
+                                put("Number", "0000000000") // Default since BC doesn't provide phone
                             })
                             put("Address", JSONObject().apply {
                                 val addressLines = mutableListOf<String>()
-                                addressLines.add(shipment.shipping.address)
-                                if (shipment.shipping.address2.isNotEmpty()) {
-                                    addressLines.add(shipment.shipping.address2)
+                                if (shipment.shipToAddress.isNotEmpty()) {
+                                    addressLines.add(shipment.shipToAddress)
+                                }
+                                if (shipment.shipToAddress2.isNotEmpty()) {
+                                    addressLines.add(shipment.shipToAddress2)
                                 }
                                 put("AddressLine", addressLines)
-                                put("City", shipment.shipping.city)
-                                put("StateProvinceCode", shipment.shipping.shipToState)
-                                put("PostalCode", shipment.shipping.zipCode)
-                                put("CountryCode", shipment.shipping.countryRegion)
+                                put("City", shipment.shipToCity)
+                                put("StateProvinceCode", shipment.shipToCounty) // BC uses County
+                                put("PostalCode", shipment.shipToPostCode)
+                                put("CountryCode", shipment.shipToCountry)
                             })
                             put("Residential", " ")
                         })
 
                         // Ship From (same as shipper)
                         put("ShipFrom", JSONObject().apply {
-                            put("Name", "Your Company Name")
+                            put("Name", "Luminys Systems Corporation")
                             put("AttentionName", "Shipping Department")
                             put("Phone", JSONObject().apply {
-                                put("Number", "1234567890")
+                                put("Number", "9496553999")
                             })
-                            put("FaxNumber", "1234567890")
+                            put("FaxNumber", "9496553999")
                             put("Address", JSONObject().apply {
-                                put("AddressLine", listOf("123 Business Street"))
-                                put("City", "Your City")
+                                put("AddressLine", listOf("64 Fairbanks"))
+                                put("City", "Irvine")
                                 put("StateProvinceCode", "CA")
-                                put("PostalCode", "90210")
+                                put("PostalCode", "92618")
                                 put("CountryCode", "US")
                             })
                         })
@@ -212,15 +324,20 @@ object BCApiService {
                             put("ShipmentCharge", JSONObject().apply {
                                 put("Type", "01") // Bill Shipper
                                 put("BillShipper", JSONObject().apply {
-                                    put("AccountNumber", shipment.upsAccountNumber)
+                                    put("AccountNumber", UPS_ACCOUNT_NUMBER)
                                 })
                             })
                         })
 
-                        // Service
+                        // Service - Use appropriate service based on destination
                         put("Service", JSONObject().apply {
-                            put("Code", getUPSServiceCode(shipment.shipping.shipmentMethod.code))
-                            put("Description", shipment.shipping.shipmentMethod.agentService)
+                            val (serviceCode, serviceDescription) = getAppropriateUPSService(shipment)
+
+                            put("Code", serviceCode)
+                            put("Description", serviceDescription)
+
+                            // Debug logging
+                            println("Selected UPS Service: $serviceCode - $serviceDescription")
                         })
 
                         // Package information
@@ -270,6 +387,7 @@ object BCApiService {
 
             if (responseCode == HttpURLConnection.HTTP_OK) {
                 val response = connection.inputStream.bufferedReader().use { it.readText() }
+                println("Label creation success: $response")
                 parseUPSLabelResponse(response)
             } else {
                 val errorResponse = connection.errorStream?.bufferedReader()?.use { it.readText() }
@@ -282,9 +400,19 @@ object BCApiService {
         }
     }
 
+    private fun getServiceDescription(serviceCode: String): String {
+        return when (serviceCode.uppercase()) {
+            "GROUND" -> "UPS Ground"
+            "NEXT_DAY_AIR" -> "UPS Next Day Air"
+            "SECOND_DAY_AIR" -> "UPS 2nd Day Air"
+            "THREE_DAY_SELECT" -> "UPS 3 Day Select"
+            else -> "UPS Ground"
+        }
+    }
+
     private suspend fun getUPSAccessToken(): String {
         // Check if we have a valid cached token
-        cachedToken?.let { token ->
+        cachedUPSToken?.let { token ->
             if (System.currentTimeMillis() < token.expiresAt) {
                 return token.accessToken
             }
@@ -324,7 +452,7 @@ object BCApiService {
 
                 // Cache the token with expiration (subtract 5 minutes for safety margin)
                 val expiresAt = System.currentTimeMillis() + ((expiresIn - 300) * 1000)
-                cachedToken = UPSToken(accessToken, expiresAt)
+                cachedUPSToken = UPSToken(accessToken, expiresAt)
 
                 accessToken
             } else {
@@ -339,21 +467,28 @@ object BCApiService {
     }
 
     suspend fun updateShipmentTracking(shipmentNo: String, trackingNumber: String, shipDate: String): Boolean {
+
+        //TODO FINISH THIS
         return try {
-            val url = URL("$BASE_URL/shipments/$shipmentNo/tracking")
+            val accessToken = getBCAccessToken()
+
+            val apiUrl = "$BC_BASE_URL/${BuildConfig.TENANT_ID}/$ENVIRONMENT/api/art/integration/v1.0/companies($COMPANY_ID)/warehousesshipments('$shipmentNo')"
+            val url = URL(apiUrl)
             val connection = url.openConnection() as HttpURLConnection
 
             connection.apply {
-                requestMethod = "POST"
+                requestMethod = "PATCH"
+                setRequestProperty("Authorization", "Bearer $accessToken")
                 setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("If-Match", "*")
                 doOutput = true
                 connectTimeout = 10000
                 readTimeout = 10000
             }
 
             val requestBody = JSONObject().apply {
-                put("trackingNumber", trackingNumber)
-                put("actualShipDate", shipDate)
+                put("PackageTrackingNo", trackingNumber)
+                // Add other fields you want to update
             }
 
             OutputStreamWriter(connection.outputStream).use { writer ->
@@ -361,7 +496,7 @@ object BCApiService {
                 writer.flush()
             }
 
-            connection.responseCode == HttpURLConnection.HTTP_OK
+            connection.responseCode == HttpURLConnection.HTTP_OK || connection.responseCode == HttpURLConnection.HTTP_NO_CONTENT
 
         } catch (e: Exception) {
             false
@@ -384,60 +519,62 @@ object BCApiService {
 
     private fun parseShipmentResponse(jsonString: String): ShipmentData {
         val json = JSONObject(jsonString)
-        val data = json.getJSONObject("data")
-        val shipping = data.getJSONObject("shipping")
-        val shipmentMethod = shipping.getJSONObject("shipmentMethod")
-        val linesArray = data.getJSONArray("lines")
-
-        val lines = mutableListOf<LineItem>()
-        for (i in 0 until linesArray.length()) {
-            val lineJson = linesArray.getJSONObject(i)
-            lines.add(
-                LineItem(
-                    itemNo = lineJson.getString("itemNo"),
-                    modelName = lineJson.getString("modelName"),
-                    description = lineJson.getString("description"),
-                    quantity = lineJson.getInt("quantity"),
-                    unitOfMeasureCode = lineJson.getString("unitOfMeasureCode")
-                )
-            )
-        }
 
         return ShipmentData(
-            shipmentNo = data.getString("shipmentNo"),
-            sellToCustomer = data.getString("sellToCustomer"),
-            sellToCustomerName = data.getString("sellToCustomerName"),
-            salesOrder = data.getString("salesOrder"),
-            externalDocumentNo = data.getString("externalDocumentNo"),
-            packageTrackingNo = data.optString("packageTrackingNo", ""),
-            ediSentAt = data.optString("ediSentAt", ""),
-            locationCode = data.getString("locationCode"),
-            createdBy = data.getString("createdBy"),
-            shipmentDate = data.getString("shipmentDate"),
-            assignedUserId = data.optString("assignedUserId", ""),
-            status = data.getString("status"),
-            upsAccountNumber = data.getString("upsAccountNumber"),
+            // OData fields
+            odataContext = json.optString("@odata.context", ""),
+            odataEtag = json.optString("@odata.etag", ""),
+
+            // Core shipment fields from BC
+            shipmentNo = json.optString("no", ""),
+            locationCode = json.optString("locationCode", ""),
+            assignedUserId = json.optString("assignedUserId", ""),
+            externalDocumentNo = json.optString("ExternalDocumentNo", ""),
+            packageTrackingNo = json.optString("PackageTrackingNo", ""),
+            agentAccount = json.optString("agentAccount", ""),
+            shippingInstructionsText = json.optString("shippingInstructionsText", ""),
+
+            // Package dimensions (directly from BC)
+            packageLength = json.optDouble("packageLength", 0.0),
+            packageWidth = json.optDouble("packageWidth", 0.0),
+            packageHeight = json.optDouble("packageHeight", 0.0),
+            packageWeight = json.optDouble("packageWeight", 0.0),
+
+            // Ship to address fields (from BC response)
+            shipToName = json.optString("shipToName", ""),
+            shipToName2 = json.optString("shipToName2", ""),
+            shipToAddress = json.optString("shipToAddress", ""),
+            shipToAddress2 = json.optString("shipToAddress2", ""),
+            shipToCity = json.optString("shipToCity", ""),
+            shipToCounty = json.optString("shipToCounty", ""), // BC uses County for state
+            shipToPostCode = json.optString("shipToPostCode", ""),
+            shipToCountry = json.optString("shipToCountry", ""),
+            shipToContact = json.optString("shipToContact", ""),
+
+            // Map agentAccount to UPS account for UPS integration
+            upsAccountNumber = json.optString("agentAccount", ""),
+
+            // Create legacy shipping info for UPS compatibility (if needed)
             shipping = ShippingInfo(
-                addressCode = shipping.getString("addressCode"),
-                name = shipping.getString("name"),
-                address = shipping.getString("address"),
-                address2 = shipping.optString("address2", ""),
-                city = shipping.getString("city"),
-                shipToState = shipping.getString("shipToState"),
-                zipCode = shipping.getString("zipCode"),
-                countryRegion = shipping.getString("countryRegion"),
-                phoneNo = shipping.optString("phoneNo", ""),
-                contact = shipping.optString("contact", ""),
-                locationCode = shipping.optString("locationCode", ""),
-                outboundWhseHandlingTime = shipping.optString("outboundWhseHandlingTime", ""),
-                shippingTime = shipping.optString("shippingTime", ""),
+                addressCode = "",
+                name = json.optString("shipToName", ""),
+                address = json.optString("shipToAddress", ""),
+                address2 = json.optString("shipToAddress2", ""),
+                city = json.optString("shipToCity", ""),
+                shipToState = json.optString("shipToCounty", ""), // Map county to state
+                zipCode = json.optString("shipToPostCode", ""),
+                countryRegion = json.optString("shipToCountry", ""),
+                phoneNo = "",
+                contact = json.optString("shipToContact", ""),
+                locationCode = json.optString("locationCode", ""),
+                outboundWhseHandlingTime = "",
+                shippingTime = "",
                 shipmentMethod = ShipmentMethod(
-                    code = shipmentMethod.getString("code"),
-                    agent = shipmentMethod.getString("agent"),
-                    agentService = shipmentMethod.getString("agentService")
+                    code = "GROUND", // Default - you may need to map this from BC
+                    agent = "UPS",
+                    agentService = "Ground"
                 )
-            ),
-            lines = lines
+            )
         )
     }
 
@@ -449,14 +586,40 @@ object BCApiService {
 
         val trackingNumber = packageResults.getString("TrackingNumber")
         val labelData = packageResults.getJSONObject("ShippingLabel").getString("GraphicImage")
+        val imageFormat = packageResults.getJSONObject("ShippingLabel")
+            .getJSONObject("ImageFormat").getString("Code")
 
-        // Calculate estimated delivery date (this would typically come from UPS response)
-        val estimatedDeliveryDate = "" // UPS doesn't always provide this in the response
+        val shipmentIdentificationNumber = shipmentResults.getString("ShipmentIdentificationNumber")
+
+        val billingWeightObj = shipmentResults.getJSONObject("BillingWeight")
+        val billingWeight = billingWeightObj.getString("Weight")
+        val billingWeightUnit = billingWeightObj.getJSONObject("UnitOfMeasurement").getString("Code")
+
+        val baseServiceCharge = packageResults.getJSONObject("BaseServiceCharge").getString("MonetaryValue")
+        val serviceOptionsCharge = packageResults.getJSONObject("ServiceOptionsCharges").getString("MonetaryValue")
+
+        val totalCharge = shipmentResults.getJSONObject("ShipmentCharges")
+            .getJSONObject("TotalCharges").getString("MonetaryValue")
+
+        val currencyCode = shipmentResults.getJSONObject("ShipmentCharges")
+            .getJSONObject("TotalCharges").getString("CurrencyCode")
+
+        val customerContext = shipmentResponse.getJSONObject("Response")
+            .getJSONObject("TransactionReference").getString("CustomerContext")
 
         return LabelResponse(
             trackingNumber = trackingNumber,
             labelData = labelData,
-            estimatedDeliveryDate = estimatedDeliveryDate
+            imageFormat = imageFormat,
+            shipmentIdentificationNumber = shipmentIdentificationNumber,
+            billingWeight = billingWeight,
+            billingWeightUnit = billingWeightUnit,
+            baseServiceCharge = baseServiceCharge,
+            serviceOptionsCharge = serviceOptionsCharge,
+            totalCharge = totalCharge,
+            currencyCode = currencyCode,
+            customerContext = customerContext,
         )
     }
+
 }

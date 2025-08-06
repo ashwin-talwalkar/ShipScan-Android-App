@@ -1,6 +1,6 @@
 # ShipScan Android Application
 
-A Android application that streamlines shipping operations by scanning barcodes, retrieving shipment data from Business Central, creating UPS shipping labels, and updating tracking information back to the ERP system. 
+An Android application that streamlines shipping operations by scanning barcodes, retrieving shipment data from Business Central, creating UPS shipping labels, and updating tracking information back to the ERP system. 
 
 ## Overview
 
@@ -23,7 +23,6 @@ ShipScan is a comprehensive shipping solution that bridges the gap between wareh
 - **UPS API Integration**: Automated shipping label creation with OAuth2 authentication
 - **Label Management**: Preview, print, and PDF conversion capabilities
 - **Offline-Ready**: Robust error handling and retry mechanisms
-- **Professional UI**: Material Design components with loading states
 
 ## Technology Stack
 
@@ -82,47 +81,16 @@ Generate UPS label → Preview label → Print label → Update Business Central
 
 ### Configuration Files
 
-#### build.gradle (Module: app)
-```gradle
-android {
-    compileSdk 34
-    
-    defaultConfig {
-        applicationId "com.luminys.shipscan"
-        minSdk 21
-        targetSdk 34
-        versionCode 1
-        versionName "1.0"
-    }
-    
-    buildTypes {
-        release {
-            buildConfigField "String", "UPS_CLIENT_ID", "\"${ups_client_id}\""
-            buildConfigField "String", "UPS_CLIENT_SECRET", "\"${ups_client_secret}\""
-        }
-        debug {
-            buildConfigField "String", "UPS_CLIENT_ID", "\"${ups_client_id}\""
-            buildConfigField "String", "UPS_CLIENT_SECRET", "\"${ups_client_secret}\""
-        }
-    }
-}
-
-dependencies {
-    implementation 'androidx.camera:camera-camera2:1.3.0'
-    implementation 'androidx.camera:camera-lifecycle:1.3.0'
-    implementation 'androidx.camera:camera-view:1.3.0'
-    implementation 'com.google.mlkit:barcode-scanning:17.2.0'
-    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
-    implementation 'com.google.android.material:material:1.10.0'
-    // Add other dependencies as needed
-}
-```
 
 #### gradle.properties
 ```properties
 # UPS API Credentials (add to local gradle.properties & copy gradle.properties.copy > gradle.properties)
-ups_client_id=YOUR_UPS_CLIENT_ID
-ups_client_secret=YOUR_UPS_CLIENT_SECRET
+UPS_CLIENT_ID=XXX
+UPS_CLIENT_SECRET=XXX
+BC_CLIENT_ID=XXX
+BC_CLIENT_SECRET=XXX
+BC_SCOPE=https://api.businesscentral.dynamics.com/.default
+TENANT_ID=XXX
 ```
 
 ### API Configuration
@@ -130,7 +98,7 @@ ups_client_secret=YOUR_UPS_CLIENT_SECRET
 #### Business Central API Setup
 ```kotlin
 // In BCApiService.kt
-private const val BASE_URL = "http://192.168.0.25:3000/api"
+private const val BC_BASE_URL = "https://api.businesscentral.dynamics.com/v2.0"
 ```
 
 ## Installation & Deployment
@@ -144,16 +112,19 @@ private const val BASE_URL = "http://192.168.0.25:3000/api"
    ```
 
 2. **Configure API Keys**:
-   ```bash
-   # Add to gradle.properties
-   echo "ups_client_id=YOUR_CLIENT_ID" >> gradle.properties
-   echo "ups_client_secret=YOUR_CLIENT_SECRET" >> gradle.properties
+   ```properties
+   # Fil out in gradle.properties
+   UPS_CLIENT_ID=XXX
+   UPS_CLIENT_SECRET=XXX
+   BC_CLIENT_ID=XXX
+   BC_CLIENT_SECRET=XXX
+   BC_SCOPE=https://api.businesscentral.dynamics.com/.default
+   TENANT_ID=XXX
    ```
 
 3. **Build and Run**:
    ```bash
-   ./gradlew assembleDebug
-   # Or use Android Studio Run button
+   # Use Android Studio Run button
    ```
 
 ### Production Deployment
@@ -207,8 +178,67 @@ private const val BASE_URL = "http://192.168.0.25:3000/api"
 
 ### Business Central API
 
-CURRENTLY USING A FAKE DATA API. Please connect the properly working BC Api to get it running 
+Business Central API
+This integration uses the Business Central API to retrieve warehouse shipment data and update tracking information post-label creation.
+
+Base URL:
+https://api.businesscentral.dynamics.com/v2.0/{TENANT_ID}/{ENVIRONMENT}/api/art/integration/v1.0/companies({COMPANY_ID})
+
+Primary Endpoints:
+
+- Get Shipment by Number
+   `GET /warehousesshipments('{shipmentNo}')`
+   Fetches a warehouse shipment record from Business Central using the shipment number.
+- Update Shipment Tracking
+  `PATCH /warehousesshipments('{shipmentNo}')`
+  Updates the PackageTrackingNo field on the shipment with the UPS tracking number after label generation.
+
+Headers Required:
+
+- `Authorization: Bearer {access_token}`
+- `Content-Type: application/json`
+- `Accept: application/json`
+
+#### Authentication Flow
+
+Business Central OAuth 2.0
+Business Central authentication uses the Client Credentials Flow via Azure Active Directory.
+
+Token URL:
+`https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token`
+
+Request Body:
+
+```bash
+grant_type=client_credentials
+client_id={BC_CLIENT_ID}
+client_secret={BC_CLIENT_SECRET}
+scope={BC_SCOPE}
+```
+Token Caching:
+The application caches the access token in memory and refreshes it before expiration (with a 5-minute buffer).
+
 #### Shipment Retrieval
+
+To retrieve shipment data from Business Central, the getShipment(shipmentNo: String) function:
+
+Obtains a valid OAuth access token (cached when possible).
+
+Makes a `GET` request to:
+
+```bash
+/warehousesshipments('{shipmentNo}')
+````
+Parses the JSON response and maps the values to the ShipmentData data class, including:
+
+- Shipment number 
+- Ship-to address fields 
+- Package dimensions 
+- Tracking number 
+- External document number 
+- Agent account 
+- Legacy shipping info for compatibility with UPS integration 
+- Handles errors by inspecting HTTP response codes and logging detailed diagnostic information, with user-friendly error messages for common problems (e.g. 401, 403, 404, 500).
 
 ### UPS API Integration
 

@@ -13,6 +13,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
+import android.widget.ImageButton
 
 class ShipmentDetailsActivity : AppCompatActivity() {
 
@@ -30,7 +31,6 @@ class ShipmentDetailsActivity : AppCompatActivity() {
     private lateinit var tvCustomerName: TextView
     private lateinit var tvSalesOrder: TextView
     private lateinit var tvShipToAddress: TextView
-    private lateinit var tvItems: TextView
 
     // Package dimension views
     private lateinit var etPackageHeight: TextInputEditText
@@ -39,11 +39,12 @@ class ShipmentDetailsActivity : AppCompatActivity() {
     private lateinit var etPackageWeight: TextInputEditText
 
     private lateinit var btnCreateLabel: Button
-    private lateinit var btnBack: Button
+    private lateinit var btnBack: ImageButton
 
     // Error views
     private lateinit var layoutError: LinearLayout
     private lateinit var btnRetry: Button
+    private lateinit var btnBackToScan: Button
 
     private var scannedBarcode: String = ""
     private var shipmentData: ShipmentData? = null
@@ -76,7 +77,6 @@ class ShipmentDetailsActivity : AppCompatActivity() {
         tvCustomerName = findViewById(R.id.tvCustomerName)
         tvSalesOrder = findViewById(R.id.tvSalesOrder)
         tvShipToAddress = findViewById(R.id.tvShipToAddress)
-        tvItems = findViewById(R.id.tvItems)
 
         // Package dimension views
         etPackageHeight = findViewById(R.id.etPackageHeight)
@@ -90,6 +90,9 @@ class ShipmentDetailsActivity : AppCompatActivity() {
         // Error views
         layoutError = findViewById(R.id.layoutError)
         btnRetry = findViewById(R.id.btnRetry)
+        btnBackToScan = findViewById(R.id.btnBackToScan)
+
+
     }
 
     private fun setupClickListeners() {
@@ -103,6 +106,10 @@ class ShipmentDetailsActivity : AppCompatActivity() {
 
         btnCreateLabel.setOnClickListener {
             createShippingLabel()
+        }
+
+        btnBackToScan.setOnClickListener {
+            finish() // Go back to the previous activity (scanner)
         }
     }
 
@@ -128,31 +135,24 @@ class ShipmentDetailsActivity : AppCompatActivity() {
 
     private fun populateShipmentData(shipment: ShipmentData) {
         tvShipmentNumber.text = "Shipment: ${shipment.shipmentNo}"
-        tvCustomerName.text = shipment.sellToCustomerName
-        tvSalesOrder.text = "SO: ${shipment.salesOrder}"
+        tvCustomerName.text = shipment.shipToName
 
-        // Format address
-        val address = buildString {
-            append(shipment.shipping.name)
-            append("\n${shipment.shipping.address}")
-            if (shipment.shipping.address2.isNotEmpty()) {
-                append("\n${shipment.shipping.address2}")
-            }
-            append("\n${shipment.shipping.city}, ${shipment.shipping.shipToState} ${shipment.shipping.zipCode}")
-            append("\n${shipment.shipping.countryRegion}")
+        if (shipment.externalDocumentNo.isNotEmpty()) {
+            tvSalesOrder.text = "Ext Doc: ${shipment.externalDocumentNo}"
+        } else {
+            tvSalesOrder.text = "Document: N/A"
         }
-        tvShipToAddress.text = address
 
-        // Format items
-        val itemsText = buildString {
-            shipment.lines.forEachIndexed { index, item ->
-                if (index > 0) append("\n\n")
-                append("${item.quantity}x ${item.modelName}")
-                append("\n${item.description}")
-                append("\nItem #: ${item.itemNo}")
-            }
+        // Use the extension function for formatted address
+        tvShipToAddress.text = shipment.getFormattedAddress()
+
+        // Pre-populate package dimensions if available
+        shipment.getPackageDimensionsAsStrings()?.let { dimensions ->
+            etPackageHeight.setText(dimensions.height)
+            etPackageWidth.setText(dimensions.width)
+            etPackageDepth.setText(dimensions.depth)
+            etPackageWeight.setText(dimensions.weight)
         }
-        tvItems.text = itemsText
     }
 
     private fun createShippingLabel() {

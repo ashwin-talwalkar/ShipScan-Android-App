@@ -20,6 +20,10 @@ android {
         debug {
             buildConfigField("String", "UPS_CLIENT_ID", "\"${project.findProperty("UPS_CLIENT_ID")}\"")
             buildConfigField("String", "UPS_CLIENT_SECRET", "\"${project.findProperty("UPS_CLIENT_SECRET")}\"")
+            buildConfigField("String", "BC_CLIENT_ID", "\"${project.findProperty("BC_CLIENT_ID")}\"")
+            buildConfigField("String", "BC_CLIENT_SECRET", "\"${project.findProperty("BC_CLIENT_SECRET")}\"")
+            buildConfigField("String", "BC_SCOPE", "\"${project.findProperty("BC_SCOPE")}\"")
+            buildConfigField("String", "TENANT_ID", "\"${project.findProperty("TENANT_ID")}\"")
         }
         release {
             isMinifyEnabled = false
@@ -29,6 +33,10 @@ android {
             )
             buildConfigField("String", "UPS_CLIENT_ID", "\"${project.findProperty("UPS_CLIENT_ID")}\"")
             buildConfigField("String", "UPS_CLIENT_SECRET", "\"${project.findProperty("UPS_CLIENT_SECRET")}\"")
+            buildConfigField("String", "BC_CLIENT_ID", "\"${project.findProperty("BC_CLIENT_ID")}\"")
+            buildConfigField("String", "BC_CLIENT_SECRET", "\"${project.findProperty("BC_CLIENT_SECRET")}\"")
+            buildConfigField("String", "BC_SCOPE", "\"${project.findProperty("BC_SCOPE")}\"")
+            buildConfigField("String", "TENANT_ID", "\"${project.findProperty("TENANT_ID")}\"")
         }
     }
 

@@ -47,10 +47,16 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
-        <androidx.camera.view.PreviewView
-            android:id="@+id/previewView"
+        <!-- Placeholder for layout preview - PreviewView will be added programmatically -->
+        <TextView
             android:layout_width="match_parent"
-            android:layout_height="match_parent" />
+            android:layout_height="match_parent"
+            android:text="📷\n\nCamera Preview\n\n(Preview shows at runtime)"
+            android:textColor="@android:color/white"
+            android:textSize="16sp"
+            android:gravity="center"
+            android:background="#333333"
+            tools:visibility="visible" />
 
     </FrameLayout>
 
@@ -115,31 +121,20 @@
             android:textStyle="bold"
             android:layout_marginBottom="12dp" />
 
-        <com.google.android.material.textfield.TextInputLayout
-            android:id="@+id/tilBarcodeInput"
+        <!-- Using standard EditText with border drawable instead of Material TextInputLayout -->
+        <EditText
+            android:id="@+id/etBarcodeInput"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_height="56dp"
             android:layout_marginBottom="16dp"
-            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox"
-            app:boxCornerRadiusBottomEnd="12dp"
-            app:boxCornerRadiusBottomStart="12dp"
-            app:boxCornerRadiusTopEnd="12dp"
-            app:boxCornerRadiusTopStart="12dp"
-            app:boxStrokeColor="@color/luminys_primary"
-            app:hintTextColor="@color/luminys_primary">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/etBarcodeInput"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:hint="Enter barcode number"
-                android:textColorHint="@color/text_secondary"
-                android:textColor="@color/text_primary"
-                android:inputType="textCapCharacters"
-                android:digits="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz "
-                android:padding="16dp" />
-
-        </com.google.android.material.textfield.TextInputLayout>
+            android:hint="Enter barcode number"
+            android:textColorHint="@color/text_secondary"
+            android:textColor="@color/text_primary"
+            android:inputType="textCapCharacters"
+            android:digits="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz "
+            android:padding="16dp"
+            android:background="@drawable/edittext_border"
+            android:textSize="16sp" />
 
         <Button
             android:id="@+id/btnProcess"
