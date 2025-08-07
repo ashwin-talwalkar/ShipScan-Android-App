@@ -24,6 +24,7 @@ android.nonTransitiveRClass=true
 
 UPS_CLIENT_ID=XXX
 UPS_CLIENT_SECRET=XXX
+UPS_ACCOUNT_NUMBER=XXXXX
 BC_CLIENT_ID=XXX
 BC_CLIENT_SECRET=XXX
 BC_SCOPE=https://api.businesscentral.dynamics.com/.default

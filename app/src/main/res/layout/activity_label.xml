@@ -246,7 +246,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:layout_marginBottom="8dp"
-                        android:text="Total Charge: $XX.XX USD"
+                        android:text="Total Charge (To Luminys): $XX.XX USD"
                         android:textSize="14sp"
                         android:textColor="#666666" />
 
@@ -354,17 +354,11 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintEnd_toEndOf="parent">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="✅"
-                    android:textSize="48sp"
-                    android:layout_marginBottom="16dp" />
 
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Shipment Complete!"
+                    android:text="✅ Shipment Complete!"
                     android:textSize="18sp"
                     android:textColor="#4CAF50"
                     android:textStyle="bold"

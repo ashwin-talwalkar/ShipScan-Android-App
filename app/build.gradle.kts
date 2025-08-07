@@ -20,6 +20,7 @@ android {
         debug {
             buildConfigField("String", "UPS_CLIENT_ID", "\"${project.findProperty("UPS_CLIENT_ID")}\"")
             buildConfigField("String", "UPS_CLIENT_SECRET", "\"${project.findProperty("UPS_CLIENT_SECRET")}\"")
+            buildConfigField("String", "UPS_ACCOUNT_NUMBER", "\"${project.findProperty("UPS_ACCOUNT_NUMBER")}\"")
             buildConfigField("String", "BC_CLIENT_ID", "\"${project.findProperty("BC_CLIENT_ID")}\"")
             buildConfigField("String", "BC_CLIENT_SECRET", "\"${project.findProperty("BC_CLIENT_SECRET")}\"")
             buildConfigField("String", "BC_SCOPE", "\"${project.findProperty("BC_SCOPE")}\"")
@@ -33,6 +34,7 @@ android {
             )
             buildConfigField("String", "UPS_CLIENT_ID", "\"${project.findProperty("UPS_CLIENT_ID")}\"")
             buildConfigField("String", "UPS_CLIENT_SECRET", "\"${project.findProperty("UPS_CLIENT_SECRET")}\"")
+            buildConfigField("String", "UPS_ACCOUNT_NUMBER", "\"${project.findProperty("UPS_ACCOUNT_NUMBER")}\"")
             buildConfigField("String", "BC_CLIENT_ID", "\"${project.findProperty("BC_CLIENT_ID")}\"")
             buildConfigField("String", "BC_CLIENT_SECRET", "\"${project.findProperty("BC_CLIENT_SECRET")}\"")
             buildConfigField("String", "BC_SCOPE", "\"${project.findProperty("BC_SCOPE")}\"")

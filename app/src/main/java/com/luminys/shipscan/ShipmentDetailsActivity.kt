@@ -161,6 +161,13 @@ class ShipmentDetailsActivity : AppCompatActivity() {
         // Validate package dimensions
         val packageDimensions = validateAndGetPackageDimensions() ?: return
 
+        shipmentData = shipment.copy(
+            packageLength = packageDimensions.depth.toDouble(),
+            packageWidth = packageDimensions.width.toDouble(),
+            packageHeight = packageDimensions.height.toDouble(),
+            packageWeight = packageDimensions.weight.toDouble()
+        )
+
         btnCreateLabel.isEnabled = false
         btnCreateLabel.text = "Creating Label..."
 
@@ -168,13 +175,13 @@ class ShipmentDetailsActivity : AppCompatActivity() {
             try {
                 val labelResponse = withContext(Dispatchers.IO) {
                     BCApiService.createShippingLabel(
-                        shipment,
+                        shipmentData!!,
                         packageDimensions
                     )
                 }
 
                 val intent = Intent(this@ShipmentDetailsActivity, LabelActivity::class.java).apply {
-                    putExtra(LabelActivity.EXTRA_SHIPMENT_DATA, shipment)
+                    putExtra(LabelActivity.EXTRA_SHIPMENT_DATA, shipmentData!!)
                     putExtra(LabelActivity.EXTRA_LABEL_RESPONSE, labelResponse)
                     putExtra(LabelActivity.EXTRA_SHIP_DATE, getCurrentDateString())
                 }

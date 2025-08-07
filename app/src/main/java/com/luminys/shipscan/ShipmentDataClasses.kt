@@ -33,7 +33,7 @@ data class ShipmentData(
     val shipToCountry: String = "",
     val shipToContact: String = "",
 
-    // Legacy fields (for backward compatibility or custom API)
+    // Renamed fields to match BC response
     val sellToCustomer: String = "",
     val sellToCustomerName: String = "",
     val salesOrder: String = "",
@@ -60,7 +60,7 @@ data class ShippingInfo(
     val locationCode: String,
     val outboundWhseHandlingTime: String,
     val shippingTime: String,
-    val shipmentMethod: ShipmentMethod
+    val shipmentMethod: ShipmentMethod,
 ) : Serializable
 
 data class ShipmentMethod(

@@ -1,10 +1,12 @@
 # ShipScan Android Application
 
-An Android application that streamlines shipping operations by scanning barcodes, retrieving shipment data from Business Central, creating UPS shipping labels, and updating tracking information back to the ERP system. 
+An Android application that streamlines shipping operations by scanning barcodes, retrieving shipment data from Business Central, creating UPS shipping labels with customer billing, and updating tracking information back to the ERP system.
 
 ## Overview
 
-ShipScan is a comprehensive shipping solution that bridges the gap between warehouse operations and digital systems. The app enables warehouse staff to scan shipment barcodes, automatically populate shipping details, generate professional shipping labels via UPS APIs, and seamlessly update Business Central with tracking information.
+ShipScan is a comprehensive shipping solution that bridges the gap between warehouse operations and digital systems. The app enables warehouse staff to scan shipment barcodes, automatically populate shipping details, generate professional shipping labels via UPS APIs with automated customer billing, and seamlessly update Business Central with tracking information.
+
+**Key Innovation**: Automated customer billing through UPS API - customers are charged directly on their UPS accounts, eliminating upfront shipping costs and improving cash flow.
 
 ## Architecture
 
@@ -13,7 +15,7 @@ ShipScan is a comprehensive shipping solution that bridges the gap between wareh
 - **MainActivity**: Barcode scanning interface with camera integration
 - **ShipmentDetailsActivity**: Shipment information display and package dimension input
 - **LabelActivity**: Label generation, preview, printing, and system updates
-- **BCApiService**: Business Central API integration and UPS API management
+- **BCApiService**: Business Central API integration and UPS API management with customer billing
 - **PDFPrintAdapter**: Custom print adapter for shipping labels
 
 ### Key Features
@@ -21,6 +23,7 @@ ShipScan is a comprehensive shipping solution that bridges the gap between wareh
 - **Real-time Barcode Scanning**: Multi-format barcode support using ML Kit
 - **Business Central Integration**: Seamless ERP data retrieval and updates
 - **UPS API Integration**: Automated shipping label creation with OAuth2 authentication
+- **Customer Billing Automation**: Direct billing to customer UPS accounts (BillReceiver)
 - **Label Management**: Preview, print, and PDF conversion capabilities
 - **Offline-Ready**: Robust error handling and retry mechanisms
 
@@ -37,10 +40,11 @@ ShipScan is a comprehensive shipping solution that bridges the gap between wareh
 - **ML Kit**: Google's machine learning for barcode recognition
 - **Kotlin Coroutines**: Asynchronous programming and lifecycle management
 - **Material Design**: Professional UI components
+- **JSONArray/JSONObject**: UPS API request formatting
 
 ### External APIs
 - **Business Central API**: Custom REST API for shipment data
-- **UPS API**: Official UPS shipping and tracking services
+- **UPS API**: Official UPS shipping and tracking services with customer billing
 - **OAuth2**: Secure authentication for UPS services
 
 ## Application Flow
@@ -55,9 +59,14 @@ User opens app → Camera initializes → Scan barcode → Navigate to shipment 
 Fetch shipment data → Display details → Input package dimensions → Create label
 ```
 
-### 3. Label Generation (LabelActivity)
+### 3. Label Generation with Customer Billing (LabelActivity)
 ```
-Generate UPS label → Preview label → Print label → Update Business Central
+Generate UPS label with customer billing → Preview label → Print label → Update Business Central
+```
+
+### 4. Billing Flow
+```
+Check customer UPS account → Use BillReceiver if valid → Customer pays directly → $0.00 charges to you
 ```
 
 ## Setup & Configuration
@@ -73,6 +82,7 @@ Generate UPS label → Preview label → Print label → Update Business Central
    - UPS Developer Account and API credentials
    - Business Central API access
    - Valid UPS account number for shipping
+   - Customer UPS account numbers for billing
 
 3. **Device Requirements**:
    - Camera permission for barcode scanning
@@ -81,12 +91,12 @@ Generate UPS label → Preview label → Print label → Update Business Central
 
 ### Configuration Files
 
-
 #### gradle.properties
 ```properties
 # UPS API Credentials (add to local gradle.properties & copy gradle.properties.copy > gradle.properties)
 UPS_CLIENT_ID=XXX
 UPS_CLIENT_SECRET=XXX
+UPS_ACCOUNT_NUMBER=XXXXXX
 BC_CLIENT_ID=XXX
 BC_CLIENT_SECRET=XXX
 BC_SCOPE=https://api.businesscentral.dynamics.com/.default
@@ -99,6 +109,19 @@ TENANT_ID=XXX
 ```kotlin
 // In BCApiService.kt
 private const val BC_BASE_URL = "https://api.businesscentral.dynamics.com/v2.0"
+private const val ENVIRONMENT = "Lmy0610"
+private const val COMPANY_ID = "0d85027a-3432-ef11-8409-002248ab1716"
+```
+
+#### UPS API Setup
+```kotlin
+// Test Environment
+private const val UPS_AUTH_URL = "https://wwwcie.ups.com/security/v1/oauth/token"
+private const val UPS_SHIPPING_URL = "https://wwwcie.ups.com/api/shipments/v2409/ship"
+
+// Production Environment (when ready)
+// private const val UPS_AUTH_URL = "https://onlinetools.ups.com/security/v1/oauth/token"
+// private const val UPS_SHIPPING_URL = "https://onlinetools.ups.com/api/shipments/v2409/ship"
 ```
 
 ## Installation & Deployment
@@ -113,9 +136,10 @@ private const val BC_BASE_URL = "https://api.businesscentral.dynamics.com/v2.0"
 
 2. **Configure API Keys**:
    ```properties
-   # Fil out in gradle.properties
+   # Fill out in gradle.properties
    UPS_CLIENT_ID=XXX
    UPS_CLIENT_SECRET=XXX
+   UPS_ACCOUNT_NUMBER=XXXXXX
    BC_CLIENT_ID=XXX
    BC_CLIENT_SECRET=XXX
    BC_SCOPE=https://api.businesscentral.dynamics.com/.default
@@ -129,15 +153,62 @@ private const val BC_BASE_URL = "https://api.businesscentral.dynamics.com/v2.0"
 
 ### Production Deployment
 
-1. **Generate Signed APK**:
+1. **Update UPS URLs**: Change from `wwwcie.ups.com` to `onlinetools.ups.com`
+2. **Generate Signed APK**:
    - Configure signing in Android Studio
    - Build → Generate Signed Bundle/APK
    - Select APK and configure keystore
 
-2. **Distribution Options**:
+3. **Distribution Options**:
    - Google Play Store (recommended)
    - Enterprise distribution (MDM)
    - Direct APK installation
+
+## Customer Billing Feature
+
+### How It Works
+
+The app automatically determines billing based on customer data from Business Central:
+
+1. **Customer Has UPS Account**: Uses `BillReceiver` - customer pays directly
+2. **No Customer UPS Account**: Uses `BillShipper` - you pay and invoice separately
+
+### Business Central Integration
+
+Customer UPS account numbers are stored in the `agentAccount` field in Business Central and mapped to `upsAccountNumber` in the app:
+
+```kotlin
+// In parseShipmentResponse()
+upsAccountNumber = json.optString("agentAccount", ""),
+```
+
+### UPS API Billing Logic
+
+```kotlin
+// Payment Information Logic
+if (shipment.upsAccountNumber.isNotEmpty() && 
+    shipment.upsAccountNumber != BuildConfig.UPS_ACCOUNT_NUMBER) {
+    
+    // Bill the customer (receiver pays)
+    put("BillReceiver", JSONObject().apply {
+        put("AccountNumber", shipment.upsAccountNumber)
+        put("Address", JSONObject().apply {
+            put("PostalCode", shipment.shipToPostCode)
+        })
+    })
+} else {
+    // Bill our own account (shipper pays)
+    put("BillShipper", JSONObject().apply {
+        put("AccountNumber", BuildConfig.UPS_ACCOUNT_NUMBER)
+    })
+}
+```
+
+### Charge Verification
+
+- **Test Environment**: Shows $0.00 when the customer is billed and customer is not actually charged
+- **Production Environment**: Customer pays real rates, you pay $0.00
+- **When you're billed**: Shows actual shipping costs in response
 
 ## Usage Instructions
 
@@ -151,14 +222,21 @@ private const val BC_BASE_URL = "https://api.businesscentral.dynamics.com/v2.0"
 #### 2. Processing Shipments
 - Scan shipment barcode
 - Review shipment details automatically loaded
+- Verify customer UPS account is populated (for customer billing)
 - Enter package dimensions (height, width, depth, weight)
 - Tap "Create Shipping Label"
 
 #### 3. Managing Labels
 - Preview generated shipping label
+- Verify billing information (customer vs. company)
 - Print label using device printer
 - Update Business Central system with tracking info
 - Complete workflow and return to scanning
+
+#### 4. Billing Verification
+- Check label response for $0.00 charges (this indicates that the customer was billed)
+- Non-zero charges indicate you're being billed (BC has our account number or is blank)
+- Customer receives separate UPS invoice
 
 ### For Administrators
 
@@ -166,211 +244,166 @@ private const val BC_BASE_URL = "https://api.businesscentral.dynamics.com/v2.0"
 - Install APK on warehouse devices
 - Configure network access to Business Central API
 - Set up printer connections if needed
-- Test with sample shipments
+- Test with sample shipments and customer accounts
 
-#### 2. User Training
+#### 2. Customer Account Management
+- Ensure customer UPS accounts are entered in Business Central `agentAccount` field
+- Verify customer accounts are active and allow third-party billing
+- Test billing with small shipments before full deployment
+
+#### 3. User Training
 - Demonstrate barcode scanning techniques
 - Show package dimension measurement
-- Explain error handling and retry procedures
-- Practice complete workflow
+- Explain billing verification process
+- Practice complete workflow with customer billing scenarios
 
 ## API Integration Details
 
 ### Business Central API
 
-Business Central API
-This integration uses the Business Central API to retrieve warehouse shipment data and update tracking information post-label creation.
+This integration uses the Business Central API to retrieve warehouse shipment data including customer UPS account information and update tracking information post-label creation.
 
-Base URL:
-https://api.businesscentral.dynamics.com/v2.0/{TENANT_ID}/{ENVIRONMENT}/api/art/integration/v1.0/companies({COMPANY_ID})
-
-Primary Endpoints:
-
-- Get Shipment by Number
-   `GET /warehousesshipments('{shipmentNo}')`
-   Fetches a warehouse shipment record from Business Central using the shipment number.
-- Update Shipment Tracking
-  `PATCH /warehousesshipments('{shipmentNo}')`
-  Updates the PackageTrackingNo field on the shipment with the UPS tracking number after label generation.
-
-Headers Required:
-
-- `Authorization: Bearer {access_token}`
-- `Content-Type: application/json`
-- `Accept: application/json`
-
-#### Authentication Flow
-
-Business Central OAuth 2.0
-Business Central authentication uses the Client Credentials Flow via Azure Active Directory.
-
-Token URL:
-`https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token`
-
-Request Body:
-
-```bash
-grant_type=client_credentials
-client_id={BC_CLIENT_ID}
-client_secret={BC_CLIENT_SECRET}
-scope={BC_SCOPE}
+**Base URL**:
 ```
-Token Caching:
-The application caches the access token in memory and refreshes it before expiration (with a 5-minute buffer).
+https://api.businesscentral.dynamics.com/v2.0/{TENANT_ID}/{ENVIRONMENT}/api/art/integration/v1.0/companies({COMPANY_ID})
+```
 
-#### Shipment Retrieval
+**Primary Endpoints**:
 
-To retrieve shipment data from Business Central, the getShipment(shipmentNo: String) function:
+- **Get Shipment by Number**
+   ```
+   GET /warehousesshipments('{shipmentNo}')
+   ```
+  Fetches warehouse shipment record including customer UPS account (`agentAccount` field)
 
-Obtains a valid OAuth access token (cached when possible).
+- **Update Shipment Tracking**
+  ```
+  PATCH /warehousesshipments('{shipmentNo}')
+  ```
+  Updates the `PackageTrackingNo` field with UPS tracking number
 
-Makes a `GET` request to:
-
-```bash
-/warehousesshipments('{shipmentNo}')
-````
-Parses the JSON response and maps the values to the ShipmentData data class, including:
-
-- Shipment number 
-- Ship-to address fields 
-- Package dimensions 
-- Tracking number 
-- External document number 
-- Agent account 
-- Legacy shipping info for compatibility with UPS integration 
-- Handles errors by inspecting HTTP response codes and logging detailed diagnostic information, with user-friendly error messages for common problems (e.g. 401, 403, 404, 500).
+**Key Fields Retrieved**:
+- `agentAccount`: Customer's UPS account number for billing
+- Ship-to address information
+- Package dimensions
+- Shipment references
 
 ### UPS API Integration
 
 #### Authentication Flow
-1. Request OAuth2 token using client credentials
-2. Cache token with expiration handling
-3. Auto-refresh tokens before expiry
+```kotlin
+// OAuth 2.0 Client Credentials Flow
+private suspend fun getUPSAccessToken(): String {
+    val url = URL(UPS_AUTH_URL)
+    val credentials = "${BuildConfig.UPS_CLIENT_ID}:${BuildConfig.UPS_CLIENT_SECRET}"
+    val encodedCredentials = Base64.encodeToString(credentials.toByteArray(), Base64.NO_WRAP)
+    
+    // Request with Basic Auth header
+    connection.setRequestProperty("Authorization", "Basic $encodedCredentials")
+    
+    // Token caching with expiration
+    val expiresAt = System.currentTimeMillis() + ((expiresIn - 300) * 1000)
+    cachedUPSToken = UPSToken(accessToken, expiresAt)
+}
+```
 
-#### Shipping Label Creation
-- Constructs comprehensive UPS ShipmentRequest
-- Handles address validation and formatting
-- Supports multiple service levels
-- Returns tracking number and label data
+#### Shipping Label Creation with Customer Billing
 
-## Error Handling & Troubleshooting
+**Key Request Structure**:
+```json
+{
+  "ShipmentRequest": {
+    "Shipment": {
+      "PaymentInformation": {
+        "ShipmentCharge": {
+          "Type": "01",
+          "BillReceiver": {
+            "AccountNumber": "CUSTOMER_UPS_ACCOUNT",
+            "Address": {
+              "PostalCode": "CUSTOMER_ZIP"
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
 
-### Common Issues
+**Address Line Handling**:
+```kotlin
+// Proper JSONArray formatting for UPS
+val addressLinesArray = JSONArray().apply {
+    if (shipment.shipToAddress.isNotEmpty()) {
+        put(shipment.shipToAddress)
+    }
+    if (shipment.shipToAddress2.isNotEmpty()) {
+        put(shipment.shipToAddress2)
+    }
+}
+put("AddressLine", addressLinesArray)
+```
 
-#### 1. Camera/Scanning Issues
-**Problem**: Camera not working or barcodes not scanning
-**Solutions**:
-- Verify camera permissions granted
-- Ensure adequate lighting
-- Clean camera lens
-- Try manual barcode entry
+#### Response Handling
 
-#### 2. API Connection Issues
-**Problem**: "Network error" or "Server error" messages
-**Solutions**:
-- Check network connectivity
-- Verify API endpoints are accessible
-- Confirm API credentials are correct
-- Check Business Central system status
+**Successful Customer Billing Response**:
+```json
+{
+  "ShipmentResponse": {
+    "ShipmentResults": {
+      "ShipmentCharges": {
+        "TotalCharges": {"MonetaryValue": "0.00"}
+      }
+    }
+  }
+}
+```
 
-#### 3. UPS API Issues
-**Problem**: Label creation fails
-**Solutions**:
-- Verify UPS credentials in build config
-- Check UPS account number in shipment data
-- Validate shipping addresses
-- Ensure package dimensions are reasonable
-
-#### 4. Printing Issues
-**Problem**: Labels won't print
-**Solutions**:
-- Verify printer connectivity
-- Check PDF generation succeeded
-- Ensure print permissions granted
-- Try different printer if available
-
-### Debug Features
-
-#### Logging
-- Comprehensive logging with tags
-- Error details in Android Logcat
-- Network request/response logging
-
-#### Test Mode
-- Manual barcode entry for testing
-- Error simulation capabilities
-- Offline mode testing
+**Robust Response Parsing**:
+```kotlin
+private fun parseUPSLabelResponse(jsonString: String): LabelResponse {
+    // Handle missing charge fields gracefully
+    val baseServiceCharge = packageResults.optJSONObject("BaseServiceCharge")
+        ?.optString("MonetaryValue", "0.00") ?: "0.00"
+    val serviceOptionsCharge = packageResults.optJSONObject("ServiceOptionsCharges")
+        ?.optString("MonetaryValue", "0.00") ?: "0.00"
+}
+```
 
 ## Security Considerations
 
 ### API Security
-- **OAuth2 Authentication**: Secure token-based UPS API access
+- **OAuth2 Authentication**: Secure token-based UPS API access with caching
 - **HTTPS Only**: All API communications encrypted
 - **Credential Management**: API keys stored in build config, not source code
-- **Token Caching**: Secure in-memory token storage with expiration
+- **Token Caching**: Secure in-memory token storage with expiration handling
 
-### Data Protection
-- **No Data Persistence**: Shipment data not stored locally
-- **Memory Management**: Sensitive data cleared after use
-- **Network Security**: Certificate pinning for production APIs
-- **Permission Management**: Minimal required permissions
-
-### Best Practices
-- Regular security audits of dependencies
-- Secure credential rotation procedures
-- Network traffic monitoring
-- User access logging
+### Billing Security
+- **Account Validation**: UPS validates customer accounts before accepting billing
+- **Address Verification**: Postal codes must match UPS account registration
+- **Authorization**: Only authorized accounts can be billed through API
+- **Audit Trail**: All billing decisions logged for troubleshooting
 
 ## Performance Optimization
 
-### Memory Management
-- Efficient bitmap handling for label images
-- Proper cleanup of camera resources
-- Coroutine lifecycle management
-- Background processing for API calls
+_### Memory Management
+- **Token Caching**: Reduces authentication overhead
+- **Efficient JSON Processing**: Uses JSONArray for proper formatting
+- **Resource Cleanup**: Proper disposal of HTTP connections
+- **Background Processing**: API calls on background threads
 
 ### Network Optimization
-- Connection pooling for HTTP requests
-- Request timeout configuration
-- Retry logic with exponential backoff
-- Token caching to reduce auth requests
+- **Connection Pooling**: Reuses HTTP connections
+- **Timeout Configuration**: Appropriate timeouts for UPS API calls
+- **Retry Logic**: Exponential backoff for failed requests
+- **Cached Authentication**: Minimizes token refresh calls_
 
-### UI Performance
-- Async loading with progress indicators
-- Image compression for label previews
-- Smooth camera preview implementation
-- Responsive error state handling
+## Customer Billing Requirements
 
-## Customization & Extension
+### Customer Setup Requirements
 
-### Adding New Barcode Formats
-```kotlin
-val options = BarcodeScannerOptions.Builder()
-    .setBarcodeFormats(
-        Barcode.FORMAT_QR_CODE,
-        Barcode.FORMAT_CODE_128,
-        // Add new formats here
-        Barcode.FORMAT_PDF417
-    )
-    .build()
-```
-
-### Custom Shipping Services
-Extend the `getUPSServiceCode` function in `BCApiService`:
-```kotlin
-private fun getUPSServiceCode(shipmentMethodCode: String): String {
-    return when (shipmentMethodCode.uppercase()) {
-        "GROUND" -> "03"
-        "NEXT_DAY_AIR" -> "01"
-        // Add custom mappings
-        "CUSTOM_SERVICE" -> "XX"
-        else -> "03"
-    }
-}
-```
-
-### UI Customization
-- Modify layouts in `res/layout/` directory
-- Update colors in `res/values/colors.xml`
-- Customize strings in `res/values/strings.xml`
-- Add company branding assets
+1. **UPS Account**: Customer must have active UPS account
+2. **Account Type**: Must be daily pickup, occasional, customer B.I.N, or drop shipper account
+3. **Third-Party Billing**: Account must allow third-party billing authorization
+4. **Address Match**: Account postal code must match shipping address
+5. **Business Central Entry**: UPS account number entered in `agentAccount` field

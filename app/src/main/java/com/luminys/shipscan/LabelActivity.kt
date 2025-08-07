@@ -127,7 +127,7 @@ class LabelActivity : AppCompatActivity() {
 
 
         tvBillingWeight.text = "Billing Weight: ${label.billingWeight} LBS"
-        tvTotalCharge.text = "Total Charge: $${label.totalCharge} USD"
+        tvTotalCharge.text = "Total Charge (To Luminys): $${label.totalCharge} USD"
     }
 
     private fun generateLabelPreview() {
@@ -233,7 +233,7 @@ class LabelActivity : AppCompatActivity() {
             try {
                 val success = withContext(Dispatchers.IO) {
                     BCApiService.updateShipmentTracking(
-                        shipment.shipmentNo,
+                        shipment,
                         label.trackingNumber,
                         shipDate
                     )
