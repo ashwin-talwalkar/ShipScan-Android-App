@@ -23,9 +23,12 @@
         private const val ENVIRONMENT = "Lmy0610"
         private const val COMPANY_ID = "0d85027a-3432-ef11-8409-002248ab1716"
     
-        private const val UPS_AUTH_URL = "https://wwwcie.ups.com/security/v1/oauth/token"
-        private const val UPS_SHIPPING_URL = "https://wwwcie.ups.com/api/shipments/v2409/ship"
-    
+        private const val UPS_AUTH_URL = "https://wwwcie.ups.com/security/v1/oauth/token" //testing url
+        // prod UPS_AUTH_URL = "https://onlinetools.ups.com/security/v1/oauth/token"
+        private const val UPS_SHIPPING_URL = "https://wwwcie.ups.com/api/shipments/v2409/ship" //testing url
+        //prod UPS_AUTH_URL = "https://onlinetools.ups.com/api/shipments/v2409/ship
+
+
         // Token caching
         private var cachedBCToken: BCToken? = null
         private var cachedUPSToken: UPSToken? = null
